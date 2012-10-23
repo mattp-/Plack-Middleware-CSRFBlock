@@ -7,15 +7,16 @@ our $VERSION = '0.06';
 use HTML::Parser;
 use Plack::TempBuffer;
 use Plack::Util;
+use Plack::Request;
 use Digest::SHA1;
 use Plack::Util::Accessor qw(
     parameter_name header_name add_meta meta_name token_length
     session_key blocked onetime
-    _param_re _token_generator
+    _token_generator _env
 );
 
 sub prepare_app {
-    my $self = shift;
+    my ($self) = @_;
 
     $self->parameter_name('SEC') unless defined $self->parameter_name;
     $self->token_length(16) unless defined $self->token_length;
@@ -32,113 +33,50 @@ sub prepare_app {
     my $parameter_name = $self->parameter_name;
     my $token_length = $self->token_length;
 
-    $self->_param_re({
-        'application/x-www-form-urlencoded' => qr/
-            (?:^|&)
-            $parameter_name=([0-9a-f]{$token_length})
-            (?:&|$)
-        /x,
-        'multipart/form-data' => qr/
-            ; ?name="?$parameter_name"?(?:;[^\x0d]*)?\x0d\x0a
-            (?:[^\x0d]+\x0d\x0a)*
-            \x0d\x0a
-            ([0-9a-f]{$token_length})\x0d\x0a
-        /x,
-    });
-
     $self->_token_generator(sub {
         my $token = Digest::SHA1::sha1_hex(rand() . $$ . {} . time);
         substr($token, 0 , $token_length);
     });
 }
 
+sub log {
+    my ($self, $level, $msg) = @_;
+}
+
 sub call {
     my($self, $env) = @_;
 
-    my $session = $env->{'psgix.session'};
-    if(not $session) {
-        die "CSRFBlock needs Session.";
-    }
+    # Set the env on self
+    $self->_env( $env );
+
+    # Generate a Plack Request for this request
+    my $request = Plack::Request->new( $env );
+
+    # We need a session
+    my $session = $request->session;
+    die "CSRFBlock needs Session." unless $session;
 
     # input filter
-    if(
-        $env->{REQUEST_METHOD} =~ m{^post$}i &&
-        ($env->{CONTENT_TYPE} &&
-            ($env->{CONTENT_TYPE} =~ m{^(application/x-www-form-urlencoded)}i ||
-             $env->{CONTENT_TYPE} =~ m{^(multipart/form-data)}i))
-    ) {
-        my $ct = $1;
+    if( $request->method =~ m{^post$}i ) {
         my $token = $session->{$self->session_key}
             or return $self->token_not_found( $env );
 
-        my $cl = $env->{CONTENT_LENGTH};
-        my $re = $self->_param_re->{$ct};
-        my $input = $env->{'psgi.input'};
-        my $buffer;
-
-        if ($env->{'psgix.input.buffered'}) {
-            $input->seek(0, 0);
-        } else {
-            $buffer = Plack::TempBuffer->new($cl);
-        }
-
-        my $buf = '';
-        my $done;
         my $found;
-        my $spin = 0;
 
-        # If the X-CSRF-Token header is set, then we know we're good
-        $found = 1 if ($env->{ $self->header_name } || '') eq $token;
+        # First, check if the header is set correctly.
+        $found = ( $request->header( $self->header_name ) || '') eq $token;
 
-        while ($cl) {
-            $input->read(my $chunk, $cl < 8192 ? $cl : 8192);
-            my $read = length $chunk;
-            $cl -= $read;
-            if($done) {
-                $buffer->print($chunk) if $buffer;
-            }
-            else {
-                $buf .= $chunk;
-                if(length $buf >= 8192 or $cl == 0) {
-                    if($buf =~ $re and $1 eq $token) {
-                        $found = 1;
-                        last if not $buffer;
-                    }
-                    $buffer->print($buf) if $buffer;
-                    undef $buf;
-                    $done = 1;
-                }
-            }
-
-            if ($read == 0 && $spin++ > 2000) {
-                die "Bad Content-Length: maybe client disconnect? ($cl bytes remaining)";
-            }
+        # If the token wasn't set, let's check the params
+        unless ($found) {
+            my $val = $request->parameters->{ $self->parameter_name } || '';
+            $found = $val eq $token;
         }
 
-        if($found) {
-            # clear token if onetime option is enabled.
-            delete $session->{$self->session_key} if $self->onetime;
-        }
-        else {
-            return $self->token_not_found($env);
-        }
+        return $self->token_not_found($env) unless $found;
 
-        if($buffer) {
-            $env->{'psgi.input'} = $buffer->rewind;
-            $env->{'psgix.input.buffered'} = Plack::Util::TRUE;
-        }
-        else {
-            $input->seek(0,0);
-        }
-    } elsif ( $env->{REQUEST_METHOD} =~ m{^post$}i ) {
-        my $token = $session->{$self->session_key}
-            or return $self->token_not_found( $env );
-        # For any other post request, we're good if the X-CSRF-Token
-        # Header is set correctly.  Otherwise, die.
-        return $self->token_not_found( $env )
-            unless ($env->{ $self->header_name } || '') eq $token;
+        # If we are using onetime token, remove it from the session
+        delete $session->{$self->session_key} if $self->onetime;
     }
-
 
     return $self->response_cb($self->app->($env), sub {
         my $res = shift;
