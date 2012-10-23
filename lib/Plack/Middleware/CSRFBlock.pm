@@ -43,19 +43,21 @@ sub log {
     my $include_env = $args{env} // 0;
 
     my $req = $self->_req;
-    # Return if we have no request or logger
-    return unless $req && $req->logger;
+    return unless $req;
 
+    $msg = "CSRFBLOCK: $msg";
     $msg .= ' ENV: ' . Dumper( $req->env ) if $include_env;
-    $req->logger->({ level => $level, message => "CSRFBLOCK: $msg" });
+
+    if ( $req->logger ) {
+        $req->logger->({ level => $level, message => $msg });
+    } else {
+        print $msg . "\n";
+    }
 
 }
 
 sub call {
     my($self, $env) = @_;
-
-    # Log the request with env info
-    $self->log( info => 'Got Request', env => 1 );
 
     # Generate a Plack Request for this request
     my $request = Plack::Request->new( $env );
@@ -72,6 +74,9 @@ sub call {
 
     # input filter
     if( $request->method =~ m{^post$}i ) {
+        # Log the request with env info
+        $self->log( info => 'Got POST Request', env => 1 );
+
         my $token = $session->{$self->session_key}
             or return $self->token_not_found( $env );
 
@@ -80,13 +85,13 @@ sub call {
         # First, check if the header is set correctly.
         $found = ( $request->header( $self->header_name ) || '') eq $token;
 
-        $self->log( info => 'Found in Header? : ' . $found ? 1 : 0 );
+        $self->log( info => 'Found in Header? : ' . ($found ? 1 : 0) );
 
         # If the token wasn't set, let's check the params
         unless ($found) {
             my $val = $request->parameters->{ $self->parameter_name } || '';
             $found = $val eq $token;
-            $self->log( info => 'Found in parameters : ' . $found ? 1 : 0 );
+            $self->log( info => 'Found in parameters : ' . ($found ? 1 : 0) );
         }
 
         return $self->token_not_found($env) unless $found;
