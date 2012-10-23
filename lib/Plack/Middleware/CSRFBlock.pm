@@ -27,7 +27,7 @@ sub prepare_app {
     # Upper-case header name and replace - with _
     my $header_name = uc($self->header_name || 'X-CSRF-Token') =~ s/-/_/gr;
     # Add 'HTTP_' to beginning, and set the new header_name
-    $self->header_name( "HTTP_" . $header_name );
+    $self->header_name( $header_name );
 
 
     my $parameter_name = $self->parameter_name;
