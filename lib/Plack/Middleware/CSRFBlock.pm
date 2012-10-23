@@ -53,7 +53,6 @@ sub log {
     } else {
         print $msg . "\n";
     }
-
 }
 
 sub call {
@@ -72,13 +71,14 @@ sub call {
         die "CSRFBlock needs Session." unless $session;
     }
 
+    my $token = $session->{$self->session_key};
     # input filter
     if( $request->method =~ m{^post$}i ) {
         # Log the request with env info
         $self->log( info => 'Got POST Request', env => 1 );
 
-        my $token = $session->{$self->session_key}
-            or return $self->token_not_found( $env );
+        # If we don't have a token, can't do anything
+        return $self->token_not_found( $env ) unless $token;
 
         my $found;
 
@@ -108,7 +108,7 @@ sub call {
         }
 
         my @out;
-        my $http_host = exists $env->{HTTP_HOST} ? $env->{HTTP_HOST} : $env->{SERVER_NAME};
+        my $http_host = $request->uri->host;
         my $token = $session->{$self->session_key} ||= $self->_token_generator->();
         my $parameter_name = $self->parameter_name;
 
@@ -119,22 +119,27 @@ sub call {
                 push @out, $text;
 
                 no warnings 'uninitialized';
-                if(
-                    lc($tag) eq 'form' and
-                    lc($attr->{'method'}) eq 'post' and
-                    !($attr->{'action'} =~ m{^https?://([^/:]+)[/:]} and $1 ne $http_host)
-                ) {
-                    push @out, qq{<input type="hidden" name="$parameter_name" value="$token" />};
-                }
 
+                $tag = lc($tag);
                 # If we found the head tag and we want to add a <meta> tag
-                if( lc($tag) eq 'head' && $self->add_meta ) {
+                if( $tag eq 'head' && $self->add_meta ) {
                     # Put the csrftoken in a <meta> element in <head>
                     # So that you can get the token in javascript in your
                     # App to set in X-CSRF-Token header for all your AJAX
                     # Requests
                     my $name = $self->meta_name;
                     push @out, "<meta name=\"$name\" content=\"$token\"/>";
+                }
+
+                # If tag isn't 'form' and method isn't 'post' we dont care
+                return unless $tag eq 'form' && $attr->{'method'} =~ /post/i;
+
+                if(
+                    !($attr->{'action'} =~ m{^https?://([^/:]+)[/:]}
+                            and $1 ne $http_host)
+                ) {
+                    push @out, '<input type="hidden" ' .
+                               "name=\"$parameter_name\" value=\"$token\" />";
                 }
 
                 # TODO: determine xhtml or html?
