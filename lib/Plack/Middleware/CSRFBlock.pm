@@ -229,10 +229,29 @@ This affects C<form> tags with C<method="post">, case insensitive.
 
 =item input check
 
-For every POST requests, this module checks input parameters contain the
-collect token parameter. If not found, throws 403 Forbidden by default.
+For every POST requests, this module checks the C<X-CSRF-Token> header first,
+then C<POST> input parameters. If the correct token is not ofund in either,
+then a 403 Forbidden is returned by default.
 
-Supports C<application/x-www-form-urlencoded> and C<multipart/form-data>.
+Supports C<application/x-www-form-urlencoded> and C<multipart/form-data> for
+input parameters, but any C<POST> will be validated with the C<X-CSRF-Token>
+header.  Thus, every C<POST> will have to have either the header, or the
+appropriate form parameters in the body.
+
+=item javascript
+
+This module can be used easily with javascript by having your javascript
+provide the C<X-CSRF-Token> with any ajax C<POST> requests it makes.  You can
+get the C<token> in javascript by getting the value of the C<csrftoken> C<meta>
+tag in the page <head>.  Here is sample code that will work for C<jQuery>:
+
+    $(document).ajaxSend(function(e, xhr, options) {
+        var token = $("meta[name='csrftoken']").attr("content");
+        xhr.setRequestHeader("X-CSRF-Token", token);
+    });
+
+This will include the X-CSRF-Token header with any C<AJAX> requests made from
+your javascript.
 
 =back
 
@@ -309,36 +328,6 @@ This makes your applications more secure, but in many cases, is too strict.
 
 =back
 
-=head1 CAVEATS
-
-This middleware doesn't work with pure Ajax POST request, because it cannot
-insert the token parameter to the request. We suggest, for example, to use
-jQuery Form Plugin like:
-
-  <script type="text/javascript" src="jquery.js"></script>
-  <script type="text/javascript" src="jquery.form.js"></script>
-
-  <form action="/api" method="post" id="theform">
-    ... blah ...
-  </form>
-  <script type="text/javascript>
-    $('#theform').ajaxForm();
-  </script>
-
-so, the middleware can insert token C<input> tag next to C<form> start tag,
-and the client can send it by Ajax form.
-
-=head1 AUTHOR
-
-Rintaro Ishizaki E<lt>rintaro@cpan.orgE<gt>
-
 =head1 SEE ALSO
 
 L<Plack::Middleware::Session>
-
-=head1 LICENSE
-
-This library is free software; you can redistribute it and/or modify
-it under the same terms as Perl itself.
-
-=cut

@@ -57,10 +57,29 @@ This affects `form` tags with `method="post"`, case insensitive.
 
 - input check
 
-For every POST requests, this module checks input parameters contain the
-collect token parameter. If not found, throws 403 Forbidden by default.
+For every POST requests, this module checks the `X-CSRF-Token` header first,
+then `POST` input parameters. If the correct token is not ofund in either,
+then a 403 Forbidden is returned by default.
 
-Supports `application/x-www-form-urlencoded` and `multipart/form-data`.
+Supports `application/x-www-form-urlencoded` and `multipart/form-data` for
+input parameters, but any `POST` will be validated with the `X-CSRF-Token`
+header.  Thus, every `POST` will have to have either the header, or the
+appropriate form parameters in the body.
+
+- javascript
+
+This module can be used easily with javascript by having your javascript
+provide the `X-CSRF-Token` with any ajax `POST` requests it makes.  You can
+get the `token` in javascript by getting the value of the `csrftoken` `meta`
+tag in the page <head>.  Here is sample code that will work for `jQuery`:
+
+    $(document).ajaxSend(function(e, xhr, options) {
+        var token = $("meta[name='csrftoken']").attr("content");
+        xhr.setRequestHeader("X-CSRF-Token", token);
+    });
+
+This will include the X-CSRF-Token header with any `AJAX` requests made from
+your javascript.
 
 # NAME
 
@@ -137,37 +156,9 @@ regenerated.
 
 This makes your applications more secure, but in many cases, is too strict.
 
-# CAVEATS
-
-This middleware doesn't work with pure Ajax POST request, because it cannot
-insert the token parameter to the request. We suggest, for example, to use
-jQuery Form Plugin like:
-
-    <script type="text/javascript" src="jquery.js"></script>
-    <script type="text/javascript" src="jquery.form.js"></script>
-
-    <form action="/api" method="post" id="theform">
-      ... blah ...
-    </form>
-    <script type="text/javascript>
-      $('#theform').ajaxForm();
-    </script>
-
-so, the middleware can insert token `input` tag next to `form` start tag,
-and the client can send it by Ajax form.
-
-# AUTHOR
-
-Rintaro Ishizaki <rintaro@cpan.org>
-
 # SEE ALSO
 
 [Plack::Middleware::Session](http://search.cpan.org/perldoc?Plack::Middleware::Session)
-
-# LICENSE
-
-This library is free software; you can redistribute it and/or modify
-it under the same terms as Perl itself.
 
 # AUTHORS
 
