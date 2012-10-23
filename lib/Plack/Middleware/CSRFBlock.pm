@@ -69,7 +69,7 @@ sub call {
     ) {
         my $ct = $1;
         my $token = $session->{$self->session_key}
-            or return $self->token_not_found;
+            or return $self->token_not_found( $env );
 
         my $cl = $env->{CONTENT_LENGTH};
         my $re = $self->_param_re->{$ct};
@@ -132,10 +132,10 @@ sub call {
         }
     } elsif ( $env->{REQUEST_METHOD} =~ m{^post$}i ) {
         my $token = $session->{$self->session_key}
-            or return $self->token_not_found;
+            or return $self->token_not_found( $env );
         # For any other post request, we're good if the X-CSRF-Token
         # Header is set correctly.  Otherwise, die.
-        return $self->token_not_found($env)
+        return $self->token_not_found( $env )
             unless ($env->{ $self->header_name } || '') eq $token;
     }
 
@@ -200,9 +200,9 @@ sub call {
 }
 
 sub token_not_found {
-    my $self = shift;
+    my ($self, $env) = (shift, shift);
     if(my $app_for_blocked = $self->blocked) {
-        return $app_for_blocked->(@_);
+        return $app_for_blocked->($env, @_);
     }
     else {
         my $body = 'CSRF detected';
