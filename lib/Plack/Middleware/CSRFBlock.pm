@@ -2,18 +2,21 @@ package Plack::Middleware::CSRFBlock;
 use parent qw(Plack::Middleware);
 use strict;
 use warnings;
-our $VERSION = '0.06';
 
+use Data::Dumper;
+use Digest::SHA1;
 use HTML::Parser;
 use Plack::TempBuffer;
 use Plack::Util;
 use Plack::Request;
-use Digest::SHA1;
 use Plack::Util::Accessor qw(
     parameter_name header_name add_meta meta_name token_length
     session_key blocked onetime
     _token_generator _req
 );
+
+# No Data::Dumper pretty printing
+$Data::Dumper::Indent = 0;
 
 sub prepare_app {
     my ($self) = @_;
@@ -26,30 +29,33 @@ sub prepare_app {
 
     # Upper-case header name and replace - with _
     my $header_name = uc($self->header_name || 'X-CSRF-Token') =~ s/-/_/gr;
-    # Add 'HTTP_' to beginning, and set the new header_name
     $self->header_name( $header_name );
-
-
-    my $parameter_name = $self->parameter_name;
-    my $token_length = $self->token_length;
 
     $self->_token_generator(sub {
         my $token = Digest::SHA1::sha1_hex(rand() . $$ . {} . time);
-        substr($token, 0 , $token_length);
+        substr($token, 0 , $self->token_length);
     });
 }
 
 sub log {
-    my ($self, $level, $msg) = @_;
+    my ($self, $level, $msg, %args) = @_;
+    # Do we want to include env in the log?
+    my $include_env = $args{env} // 0;
+
     my $req = $self->_req;
     # Return if we have no request or logger
     return unless $req && $req->logger;
 
-    $req->logger->({ level => $level, message => $msg });
+    $msg .= ' ENV: ' . Dumper( $req->env ) if $include_env;
+    $req->logger->({ level => $level, message => "CSRFBLOCK: $msg" });
+
 }
 
 sub call {
     my($self, $env) = @_;
+
+    # Log the request with env info
+    $self->log( info => 'Got Request', env => 1 );
 
     # Generate a Plack Request for this request
     my $request = Plack::Request->new( $env );
@@ -59,7 +65,10 @@ sub call {
 
     # We need a session
     my $session = $request->session;
-    die "CSRFBlock needs Session." unless $session;
+    unless ($session) {
+        $self->log( error => 'No session found!' );
+        die "CSRFBlock needs Session." unless $session;
+    }
 
     # input filter
     if( $request->method =~ m{^post$}i ) {
@@ -71,10 +80,13 @@ sub call {
         # First, check if the header is set correctly.
         $found = ( $request->header( $self->header_name ) || '') eq $token;
 
+        $self->log( info => 'Found in Header? : ' . $found ? 1 : 0 );
+
         # If the token wasn't set, let's check the params
         unless ($found) {
             my $val = $request->parameters->{ $self->parameter_name } || '';
             $found = $val eq $token;
+            $self->log( info => 'Found in parameters : ' . $found ? 1 : 0 );
         }
 
         return $self->token_not_found($env) unless $found;
