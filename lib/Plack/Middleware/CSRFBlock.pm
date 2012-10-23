@@ -166,6 +166,9 @@ sub call {
 
 sub token_not_found {
     my ($self, $env) = (shift, shift);
+
+    $self->log( error => 'Token not found, returning 403!', env => 1 );
+
     if(my $app_for_blocked = $self->blocked) {
         return $app_for_blocked->($env, @_);
     }
