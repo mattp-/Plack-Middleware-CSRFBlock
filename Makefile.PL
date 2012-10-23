@@ -28,6 +28,7 @@ my %WriteMakefileArgs = (
   "LICENSE" => "perl",
   "NAME" => "Plack::Middleware::CSRFBlock",
   "PREREQ_PM" => {
+    "Data::Dumper" => 0,
     "Digest::SHA1" => 0,
     "HTML::Parser" => 0,
     "Plack::Middleware" => 0,
