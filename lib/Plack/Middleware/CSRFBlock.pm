@@ -6,9 +6,9 @@ use warnings;
 use Data::Dumper;
 use Digest::SHA1;
 use HTML::Parser;
+use Plack::Request;
 use Plack::TempBuffer;
 use Plack::Util;
-use Plack::Request;
 use Plack::Util::Accessor qw(
     parameter_name header_name add_meta meta_name token_length
     session_key blocked onetime
