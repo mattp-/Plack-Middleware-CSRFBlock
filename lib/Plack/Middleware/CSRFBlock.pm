@@ -12,7 +12,7 @@ use Digest::SHA1;
 use Plack::Util::Accessor qw(
     parameter_name header_name add_meta meta_name token_length
     session_key blocked onetime
-    _token_generator _env
+    _token_generator _req
 );
 
 sub prepare_app {
@@ -41,16 +41,21 @@ sub prepare_app {
 
 sub log {
     my ($self, $level, $msg) = @_;
+    my $req = $self->_req;
+    # Return if we have no request or logger
+    return unless $req && $req->logger;
+
+    $req->logger->({ level => $level, message => $msg });
 }
 
 sub call {
     my($self, $env) = @_;
 
-    # Set the env on self
-    $self->_env( $env );
-
     # Generate a Plack Request for this request
     my $request = Plack::Request->new( $env );
+
+    # Set the request on self
+    $self->_req( $request );
 
     # We need a session
     my $session = $request->session;
