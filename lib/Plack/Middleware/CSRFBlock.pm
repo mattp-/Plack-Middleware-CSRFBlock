@@ -51,7 +51,7 @@ sub log {
     if ( $req->logger ) {
         $req->logger->({ level => $level, message => $msg });
     } else {
-        print $msg . "\n";
+        print STDERR $msg . "\n";
     }
 }
 
