@@ -2,20 +2,24 @@ package Plack::Middleware::CSRFBlock;
 use parent qw(Plack::Middleware);
 use strict;
 use warnings;
-our $VERSION = '0.06';
 
+use Data::Dumper;
+use Digest::SHA1;
 use HTML::Parser;
+use Plack::Request;
 use Plack::TempBuffer;
 use Plack::Util;
-use Digest::SHA1;
 use Plack::Util::Accessor qw(
     parameter_name header_name add_meta meta_name token_length
     session_key blocked onetime
-    _param_re _token_generator
+    _token_generator _req
 );
 
+# No Data::Dumper pretty printing
+$Data::Dumper::Indent = 0;
+
 sub prepare_app {
-    my $self = shift;
+    my ($self) = @_;
 
     $self->parameter_name('SEC') unless defined $self->parameter_name;
     $self->token_length(16) unless defined $self->token_length;
@@ -25,120 +29,76 @@ sub prepare_app {
 
     # Upper-case header name and replace - with _
     my $header_name = uc($self->header_name || 'X-CSRF-Token') =~ s/-/_/gr;
-    # Add 'HTTP_' to beginning, and set the new header_name
-    $self->header_name( "HTTP_" . $header_name );
-
-
-    my $parameter_name = $self->parameter_name;
-    my $token_length = $self->token_length;
-
-    $self->_param_re({
-        'application/x-www-form-urlencoded' => qr/
-            (?:^|&)
-            $parameter_name=([0-9a-f]{$token_length})
-            (?:&|$)
-        /x,
-        'multipart/form-data' => qr/
-            ; ?name="?$parameter_name"?(?:;[^\x0d]*)?\x0d\x0a
-            (?:[^\x0d]+\x0d\x0a)*
-            \x0d\x0a
-            ([0-9a-f]{$token_length})\x0d\x0a
-        /x,
-    });
+    $self->header_name( $header_name );
 
     $self->_token_generator(sub {
         my $token = Digest::SHA1::sha1_hex(rand() . $$ . {} . time);
-        substr($token, 0 , $token_length);
+        substr($token, 0 , $self->token_length);
     });
+}
+
+sub log {
+    my ($self, $level, $msg, %args) = @_;
+    # Do we want to include env in the log?
+    my $include_env = $args{env} // 0;
+
+    my $req = $self->_req;
+    return unless $req;
+
+    $msg = "CSRFBLOCK: $msg";
+    $msg .= ' ENV: ' . Dumper( $req->env ) if $include_env;
+
+    if ( $req->logger ) {
+        $req->logger->({ level => $level, message => $msg });
+    } else {
+        print STDERR $msg . "\n";
+    }
 }
 
 sub call {
     my($self, $env) = @_;
 
-    my $session = $env->{'psgix.session'};
-    if(not $session) {
-        die "CSRFBlock needs Session.";
+    # Generate a Plack Request for this request
+    my $request = Plack::Request->new( $env );
+
+    # Set the request on self
+    $self->_req( $request );
+
+    # We need a session
+    my $session = $request->session;
+    unless ($session) {
+        $self->log( error => 'No session found!' );
+        die "CSRFBlock needs Session." unless $session;
     }
 
+    my $token = $session->{$self->session_key};
     # input filter
-    if(
-        $env->{REQUEST_METHOD} =~ m{^post$}i &&
-        ($env->{CONTENT_TYPE} &&
-            ($env->{CONTENT_TYPE} =~ m{^(application/x-www-form-urlencoded)}i ||
-             $env->{CONTENT_TYPE} =~ m{^(multipart/form-data)}i))
-    ) {
-        my $ct = $1;
-        my $token = $session->{$self->session_key}
-            or return $self->token_not_found;
+    if( $request->method =~ m{^post$}i ) {
+        # Log the request with env info
+        $self->log( info => 'Got POST Request', env => 1 );
 
-        my $cl = $env->{CONTENT_LENGTH};
-        my $re = $self->_param_re->{$ct};
-        my $input = $env->{'psgi.input'};
-        my $buffer;
+        # If we don't have a token, can't do anything
+        return $self->token_not_found( $env ) unless $token;
 
-        if ($env->{'psgix.input.buffered'}) {
-            $input->seek(0, 0);
-        } else {
-            $buffer = Plack::TempBuffer->new($cl);
-        }
-
-        my $buf = '';
-        my $done;
         my $found;
-        my $spin = 0;
 
-        # If the X-CSRF-Token header is set, then we know we're good
-        $found = 1 if ($env->{ $self->header_name } || '') eq $token;
+        # First, check if the header is set correctly.
+        $found = ( $request->header( $self->header_name ) || '') eq $token;
 
-        while ($cl) {
-            $input->read(my $chunk, $cl < 8192 ? $cl : 8192);
-            my $read = length $chunk;
-            $cl -= $read;
-            if($done) {
-                $buffer->print($chunk) if $buffer;
-            }
-            else {
-                $buf .= $chunk;
-                if(length $buf >= 8192 or $cl == 0) {
-                    if($buf =~ $re and $1 eq $token) {
-                        $found = 1;
-                        last if not $buffer;
-                    }
-                    $buffer->print($buf) if $buffer;
-                    undef $buf;
-                    $done = 1;
-                }
-            }
+        $self->log( info => 'Found in Header? : ' . ($found ? 1 : 0) );
 
-            if ($read == 0 && $spin++ > 2000) {
-                die "Bad Content-Length: maybe client disconnect? ($cl bytes remaining)";
-            }
+        # If the token wasn't set, let's check the params
+        unless ($found) {
+            my $val = $request->parameters->{ $self->parameter_name } || '';
+            $found = $val eq $token;
+            $self->log( info => 'Found in parameters : ' . ($found ? 1 : 0) );
         }
 
-        if($found) {
-            # clear token if onetime option is enabled.
-            delete $session->{$self->session_key} if $self->onetime;
-        }
-        else {
-            return $self->token_not_found($env);
-        }
+        return $self->token_not_found($env) unless $found;
 
-        if($buffer) {
-            $env->{'psgi.input'} = $buffer->rewind;
-            $env->{'psgix.input.buffered'} = Plack::Util::TRUE;
-        }
-        else {
-            $input->seek(0,0);
-        }
-    } elsif ( $env->{REQUEST_METHOD} =~ m{^post$}i ) {
-        my $token = $session->{$self->session_key}
-            or return $self->token_not_found;
-        # For any other post request, we're good if the X-CSRF-Token
-        # Header is set correctly.  Otherwise, die.
-        return $self->token_not_found($env)
-            unless ($env->{ $self->header_name } || '') eq $token;
+        # If we are using onetime token, remove it from the session
+        delete $session->{$self->session_key} if $self->onetime;
     }
-
 
     return $self->response_cb($self->app->($env), sub {
         my $res = shift;
@@ -148,7 +108,7 @@ sub call {
         }
 
         my @out;
-        my $http_host = exists $env->{HTTP_HOST} ? $env->{HTTP_HOST} : $env->{SERVER_NAME};
+        my $http_host = $request->uri->host;
         my $token = $session->{$self->session_key} ||= $self->_token_generator->();
         my $parameter_name = $self->parameter_name;
 
@@ -159,22 +119,27 @@ sub call {
                 push @out, $text;
 
                 no warnings 'uninitialized';
-                if(
-                    lc($tag) eq 'form' and
-                    lc($attr->{'method'}) eq 'post' and
-                    !($attr->{'action'} =~ m{^https?://([^/:]+)[/:]} and $1 ne $http_host)
-                ) {
-                    push @out, qq{<input type="hidden" name="$parameter_name" value="$token" />};
-                }
 
+                $tag = lc($tag);
                 # If we found the head tag and we want to add a <meta> tag
-                if( lc($tag) eq 'head' && $self->add_meta ) {
+                if( $tag eq 'head' && $self->add_meta ) {
                     # Put the csrftoken in a <meta> element in <head>
                     # So that you can get the token in javascript in your
                     # App to set in X-CSRF-Token header for all your AJAX
                     # Requests
                     my $name = $self->meta_name;
                     push @out, "<meta name=\"$name\" content=\"$token\"/>";
+                }
+
+                # If tag isn't 'form' and method isn't 'post' we dont care
+                return unless $tag eq 'form' && $attr->{'method'} =~ /post/i;
+
+                if(
+                    !($attr->{'action'} =~ m{^https?://([^/:]+)[/:]}
+                            and $1 ne $http_host)
+                ) {
+                    push @out, '<input type="hidden" ' .
+                               "name=\"$parameter_name\" value=\"$token\" />";
                 }
 
                 # TODO: determine xhtml or html?
@@ -200,9 +165,12 @@ sub call {
 }
 
 sub token_not_found {
-    my $self = shift;
+    my ($self, $env) = (shift, shift);
+
+    $self->log( error => 'Token not found, returning 403!', env => 1 );
+
     if(my $app_for_blocked = $self->blocked) {
-        return $app_for_blocked->(@_);
+        return $app_for_blocked->($env, @_);
     }
     else {
         my $body = 'CSRF detected';
@@ -274,10 +242,29 @@ This affects C<form> tags with C<method="post">, case insensitive.
 
 =item input check
 
-For every POST requests, this module checks input parameters contain the
-collect token parameter. If not found, throws 403 Forbidden by default.
+For every POST requests, this module checks the C<X-CSRF-Token> header first,
+then C<POST> input parameters. If the correct token is not ofund in either,
+then a 403 Forbidden is returned by default.
 
-Supports C<application/x-www-form-urlencoded> and C<multipart/form-data>.
+Supports C<application/x-www-form-urlencoded> and C<multipart/form-data> for
+input parameters, but any C<POST> will be validated with the C<X-CSRF-Token>
+header.  Thus, every C<POST> will have to have either the header, or the
+appropriate form parameters in the body.
+
+=item javascript
+
+This module can be used easily with javascript by having your javascript
+provide the C<X-CSRF-Token> with any ajax C<POST> requests it makes.  You can
+get the C<token> in javascript by getting the value of the C<csrftoken> C<meta>
+tag in the page <head>.  Here is sample code that will work for C<jQuery>:
+
+    $(document).ajaxSend(function(e, xhr, options) {
+        var token = $("meta[name='csrftoken']").attr("content");
+        xhr.setRequestHeader("X-CSRF-Token", token);
+    });
+
+This will include the X-CSRF-Token header with any C<AJAX> requests made from
+your javascript.
 
 =back
 
@@ -354,36 +341,6 @@ This makes your applications more secure, but in many cases, is too strict.
 
 =back
 
-=head1 CAVEATS
-
-This middleware doesn't work with pure Ajax POST request, because it cannot
-insert the token parameter to the request. We suggest, for example, to use
-jQuery Form Plugin like:
-
-  <script type="text/javascript" src="jquery.js"></script>
-  <script type="text/javascript" src="jquery.form.js"></script>
-
-  <form action="/api" method="post" id="theform">
-    ... blah ...
-  </form>
-  <script type="text/javascript>
-    $('#theform').ajaxForm();
-  </script>
-
-so, the middleware can insert token C<input> tag next to C<form> start tag,
-and the client can send it by Ajax form.
-
-=head1 AUTHOR
-
-Rintaro Ishizaki E<lt>rintaro@cpan.orgE<gt>
-
 =head1 SEE ALSO
 
 L<Plack::Middleware::Session>
-
-=head1 LICENSE
-
-This library is free software; you can redistribute it and/or modify
-it under the same terms as Perl itself.
-
-=cut
