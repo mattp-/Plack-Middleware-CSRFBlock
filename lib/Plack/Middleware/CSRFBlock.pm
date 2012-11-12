@@ -13,7 +13,7 @@ use Plack::TempBuffer;
 use Plack::Util;
 use Plack::Util::Accessor qw(
     parameter_name header_name add_meta meta_name token_length
-    session_key blocked onetime
+    session_key blocked onetime whitelisted
     _token_generator _req
 );
 
@@ -28,6 +28,7 @@ sub prepare_app {
     $self->session_key('csrfblock.token') unless defined $self->session_key;
     $self->meta_name('csrftoken') unless defined $self->meta_name;
     $self->add_meta(0) unless defined $self->meta_name;
+    $self->whitelisted( sub { 0 } ) unless defined $self->whitelisted;
 
     # Upper-case header name and replace - with _
     my $header_name = uc($self->header_name || 'X-CSRF-Token') =~ s/-/_/gr;
@@ -74,8 +75,8 @@ sub call {
     }
 
     my $token = $session->{$self->session_key};
-    # input filter
-    if( $request->method =~ m{^post$}i ) {
+    my $whitelisted = $self->whitelisted->( $request );
+    if( $request->method =~ m{^post$}i && !$whitelisted ) {
         # Log the request with env info
         $self->log( info => 'Got POST Request', env => 1 );
 
@@ -289,6 +290,13 @@ your javascript.
   }
 
 =over 4
+
+=item whitelisted (default: sub { 0 })
+
+Whitelisted needs to be a sub reference which is passed the current request
+object (L<Plack::Request>) as it's only argument.  The sub needs to return
+true if the url should be whitelisted and false otherwise.  By default it
+always returns false.
 
 =item parameter_name (default:"SEC")
 

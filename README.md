@@ -4,7 +4,7 @@ Plack::Middleware::CSRFBlock - Block CSRF Attacks with minimal changes to your a
 
 # VERSION
 
-version 0.07
+version 0.08
 
 # SYNOPSIS
 
@@ -104,6 +104,12 @@ your javascript.
         ;
       $app;
     }
+
+- whitelisted (default: sub { 0 })
+
+Whitelisted needs to be a sub reference which is passed the current url as it's
+only argument.  The sub needs to return true if the url should be whitelisted
+and false otherwise.  By default it always returns false.
 
 - parameter_name (default:"SEC")
 

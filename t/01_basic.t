@@ -317,5 +317,48 @@ test_psgi app => $app4, client => sub {
     is $res->code, 200, 'w/Token in Header Only';
 };
 
+# Test Whitelist
+my $app4 = builder {
+    enable 'Session',
+        state => Plack::Session::State::Cookie->new(session_key => 'sid');
+    enable 'CSRFBlock',
+        token_length => 8,
+        whitelisted => sub {
+            my ($req) = @_;
+            return $req->path eq '/post';
+        };
+    $mapped;
+};
+
+test_psgi app => $app4, client => sub {
+    my $cb = shift;
+
+    my $res = $cb->(GET "http://localhost/form/html");
+    is $res->code, 200;
+
+    my $h_cookie = $res->header('Set-Cookie');
+    $h_cookie =~ /sid=([^; ]+)/;
+    my $sid = $1;
+
+    ok $res->content =~ /<input type="hidden" name="SEC" value="([0-9a-f]{8})" \/>/;
+    my $token = $1;
+
+    # Try a whitelisted post
+    $res = $cb->(
+        POST "http://localhost/post",
+        [name => 'Plack'],
+        Cookie => "sid=$sid"
+    );
+    is $res->code, 200, 'Whitelist Worked';
+
+    # Try a NON-whitelisted post
+    $res = $cb->(
+        POST "http://localhost/post-nw",
+        [name => 'Plack'],
+        Cookie => "sid=$sid"
+    );
+    is $res->code, 403, 'NON-Whitelist Failed correctly';
+};
+
 
 done_testing;
