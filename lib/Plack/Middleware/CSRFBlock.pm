@@ -3,6 +3,8 @@ use parent qw(Plack::Middleware);
 use strict;
 use warnings;
 
+# ABSTRACT: Block CSRF Attacks with minimal changes to your app
+
 use Data::Dumper;
 use Digest::SHA1;
 use HTML::Parser;
@@ -185,11 +187,9 @@ sub token_not_found {
 1;
 __END__
 
-=head1 NAME
-
-Plack::Middleware::CSRFBlock - CSRF are never propageted to app
-
 =head1 SYNOPSIS
+
+[![Build Status](https://secure.travis-ci.org/throughnothing/Plack-Middleware-CSRFBlock.png?branch=master)](http://travis-ci.org/throughnothing/Plack-Middleware-CSRFBlock)
 
   use Plack::Builder;
 

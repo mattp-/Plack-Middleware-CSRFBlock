@@ -1,12 +1,14 @@
 # NAME
 
-Plack::Middleware::CSRFBlock
+Plack::Middleware::CSRFBlock - Block CSRF Attacks with minimal changes to your app
 
 # VERSION
 
 version 0.07
 
 # SYNOPSIS
+
+[![Build Status](https://secure.travis-ci.org/throughnothing/Plack-Middleware-CSRFBlock.png?branch=master)](http://travis-ci.org/throughnothing/Plack-Middleware-CSRFBlock)
 
     use Plack::Builder;
 
@@ -80,10 +82,6 @@ tag in the page <head>.  Here is sample code that will work for `jQuery`:
 
 This will include the X-CSRF-Token header with any `AJAX` requests made from
 your javascript.
-
-# NAME
-
-Plack::Middleware::CSRFBlock - CSRF are never propageted to app
 
 # OPTIONS
 

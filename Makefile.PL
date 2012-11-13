@@ -9,7 +9,7 @@ use ExtUtils::MakeMaker 6.30;
 
 
 my %WriteMakefileArgs = (
-  "ABSTRACT" => "CSRF are never propageted to app",
+  "ABSTRACT" => "Block CSRF Attacks with minimal changes to your app",
   "AUTHOR" => "Rintaro Ishizaki <rintaro\@cpan.org>, William Wolf <throughnothing\@gmail.com>",
   "BUILD_REQUIRES" => {
     "File::Find" => 0,
