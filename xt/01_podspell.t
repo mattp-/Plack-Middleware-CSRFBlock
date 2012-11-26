@@ -8,3 +8,9 @@ __DATA__
 Rintaro Ishizaki
 rintaro@cpan.org
 Plack::Middleware::CSRFBlock
+CSRF
+Javascript
+ajax
+csrftoken
+javascript
+middleware
