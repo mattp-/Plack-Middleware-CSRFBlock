@@ -5,7 +5,6 @@ use warnings;
 
 # ABSTRACT: Block CSRF Attacks with minimal changes to your app
 
-use Data::Dumper;
 use Digest::SHA1;
 use HTML::Parser;
 use Plack::Request;
@@ -26,7 +25,7 @@ sub prepare_app {
     # Upper-case header name and replace - with _
     my $header_name = uc($self->header_name || 'X-CSRF-Token');
     $header_name =~ s/-/_/g;
-    $self->header_name( $header_name );
+    $self->header_name($header_name);
 
     $self->_token_generator(sub {
         my $token = Digest::SHA1::sha1_hex(rand() . $$ . {} . time);
