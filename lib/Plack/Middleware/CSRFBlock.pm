@@ -12,13 +12,9 @@ use Plack::Request;
 use Plack::TempBuffer;
 use Plack::Util;
 use Plack::Util::Accessor qw(
-    parameter_name header_name add_meta meta_name token_length
-    session_key blocked onetime whitelisted
-    _token_generator _req
+    parameter_name header_name add_meta meta_tag token_length
+    session_key blocked onetime _token_generator logger
 );
-
-# No Data::Dumper pretty printing
-$Data::Dumper::Indent = 0;
 
 sub prepare_app {
     my ($self) = @_;
@@ -26,12 +22,10 @@ sub prepare_app {
     $self->parameter_name('SEC') unless defined $self->parameter_name;
     $self->token_length(16) unless defined $self->token_length;
     $self->session_key('csrfblock.token') unless defined $self->session_key;
-    $self->meta_name('csrftoken') unless defined $self->meta_name;
-    $self->add_meta(0) unless defined $self->meta_name;
-    $self->whitelisted( sub { 0 } ) unless defined $self->whitelisted;
 
     # Upper-case header name and replace - with _
-    my $header_name = uc($self->header_name || 'X-CSRF-Token') =~ s/-/_/gr;
+    my $header_name = uc($self->header_name || 'X-CSRF-Token');
+    $header_name =~ s/-/_/g;
     $self->header_name( $header_name );
 
     $self->_token_generator(sub {
@@ -41,31 +35,19 @@ sub prepare_app {
 }
 
 sub log {
-    my ($self, $level, $msg, %args) = @_;
-    # Do we want to include env in the log?
-    my $include_env = $args{env} // 0;
+    my ($self, $level, $msg) = @_;
 
-    my $req = $self->_req;
-    return unless $req;
-
-    $msg = "CSRFBLOCK: $msg";
-    $msg .= ' ENV: ' . Dumper( $req->env ) if $include_env;
-
-    if ( $req->logger ) {
-        $req->logger->({ level => $level, message => $msg });
-    } else {
-        print STDERR $msg . "\n";
-    }
+    $self->logger->({ level => $level, message => "CSRFBlock: $msg" });
 }
 
 sub call {
     my($self, $env) = @_;
 
-    # Generate a Plack Request for this request
-    my $request = Plack::Request->new( $env );
+    # cache the logger
+    $self->logger($env->{'psgix.logger'} || sub { }) unless defined $self->logger;
 
-    # Set the request on self
-    $self->_req( $request );
+    # Generate a Plack Request for this request
+    my $request = Plack::Request->new($env);
 
     # We need a session
     my $session = $request->session;
@@ -75,26 +57,25 @@ sub call {
     }
 
     my $token = $session->{$self->session_key};
-    my $whitelisted = $self->whitelisted->( $request );
-    if( $request->method =~ m{^post$}i && !$whitelisted ) {
+    if($request->method =~ m{^post$}i) {
         # Log the request with env info
-        $self->log( info => 'Got POST Request', env => 1 );
+        $self->log(info => 'Got POST Request');
 
         # If we don't have a token, can't do anything
-        return $self->token_not_found( $env ) unless $token;
+        return $self->token_not_found($env) unless $token;
 
         my $found;
 
         # First, check if the header is set correctly.
         $found = ( $request->header( $self->header_name ) || '') eq $token;
 
-        $self->log( info => 'Found in Header? : ' . ($found ? 1 : 0) );
+        $self->log(info => 'Found in Header? : ' . ($found ? 1 : 0));
 
         # If the token wasn't set, let's check the params
         unless ($found) {
             my $val = $request->parameters->{ $self->parameter_name } || '';
             $found = $val eq $token;
-            $self->log( info => 'Found in parameters : ' . ($found ? 1 : 0) );
+            $self->log(info => 'Found in parameters : ' . ($found ? 1 : 0));
         }
 
         return $self->token_not_found($env) unless $found;
@@ -125,13 +106,12 @@ sub call {
 
                 $tag = lc($tag);
                 # If we found the head tag and we want to add a <meta> tag
-                if( $tag eq 'head' && $self->add_meta ) {
+                if( $tag eq 'head' && $self->meta_tag) {
                     # Put the csrftoken in a <meta> element in <head>
                     # So that you can get the token in javascript in your
                     # App to set in X-CSRF-Token header for all your AJAX
                     # Requests
-                    my $name = $self->meta_name;
-                    push @out, "<meta name=\"$name\" content=\"$token\"/>";
+                    push @out, q{<meta name="} . $self->meta_tag . qq{" content="$token"/>};
                 }
 
                 # If tag isn't 'form' and method isn't 'post' we dont care
@@ -170,7 +150,7 @@ sub call {
 sub token_not_found {
     my ($self, $env) = (shift, shift);
 
-    $self->log( error => 'Token not found, returning 403!', env => 1 );
+    $self->log(error => 'Token not found, returning 403!');
 
     if(my $app_for_blocked = $self->blocked) {
         return $app_for_blocked->($env, @_);
@@ -189,8 +169,6 @@ sub token_not_found {
 __END__
 
 =head1 SYNOPSIS
-
-[![Build Status](https://secure.travis-ci.org/throughnothing/Plack-Middleware-CSRFBlock.png?branch=master)](http://travis-ci.org/throughnothing/Plack-Middleware-CSRFBlock)
 
   use Plack::Builder;
 
@@ -244,7 +222,7 @@ This affects C<form> tags with C<method="post">, case insensitive.
 =item input check
 
 For every POST requests, this module checks the C<X-CSRF-Token> header first,
-then C<POST> input parameters. If the correct token is not ofund in either,
+then C<POST> input parameters. If the correct token is not found in either,
 then a 403 Forbidden is returned by default.
 
 Supports C<application/x-www-form-urlencoded> and C<multipart/form-data> for
@@ -272,9 +250,9 @@ your javascript.
 =head1 OPTIONS
 
   use Plack::Builder;
-  
+
   my $app = sub { ... }
-  
+
   builder {
     enable 'Session';
     enable 'CSRFBlock',
@@ -291,31 +269,18 @@ your javascript.
 
 =over 4
 
-=item whitelisted (default: sub { 0 })
-
-Whitelisted needs to be a sub reference which is passed the current request
-object (L<Plack::Request>) as it's only argument.  The sub needs to return
-true if the url should be whitelisted and false otherwise.  By default it
-always returns false.
-
 =item parameter_name (default:"SEC")
 
 Name of the input tag for the token.
 
-=item add_meta (default: 0)
-
-Whether or not to append a C<meta> tag to pages that
-contains the token.  This is useful for getting the
-value of the token from Javascript.  The name of the
-meta tag can be set via C<meta_name> which defaults
-to C<csrftoken>.
-
-=item meta_name (default:"csrftoken")
+=item meta_tag (default:undef)
 
 Name of the C<meta> tag added to the C<head> tag of
 output pages.  The content of this C<meta> tag will be
 the token value.  The purpose of this tag is to give
 javascript access to the token if needed for AJAX requests.
+If this attribute is not explicitly set the meta tag will not
+be included.
 
 =item header_name (default:"X-CSRF-Token")
 
