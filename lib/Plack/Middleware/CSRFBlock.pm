@@ -200,7 +200,7 @@ For example, the application response body is:
         <title>input form</title>
     </head>
     <body>
-      <form action="/receive" method="post">
+      <form action="/api" method="post">
         <input type="text" name="email" /><input type="submit" />
       </form>
   </html>
