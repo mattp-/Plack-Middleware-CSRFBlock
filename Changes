@@ -1,0 +1,4 @@
+Revision history for Plack::Middleware::CSRFBlock
+
+0.07 Tue Apr 16 09:36:04 EDT 2013
+    * doc updates (thanks @myrall
