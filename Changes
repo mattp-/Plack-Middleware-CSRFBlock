@@ -1,4 +1,7 @@
 Revision history for Plack::Middleware::CSRFBlock
 
+0.8 Wed May 29 13:17:06 EDT 2013
+    * sets repository in META.yml to differentiate from other forks (thanks @oalders)
+
 0.07 Tue Apr 16 09:36:04 EDT 2013
-    * doc updates (thanks @myrall
+    * doc updates (thanks @myrall)
