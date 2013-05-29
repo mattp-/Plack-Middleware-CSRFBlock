@@ -4,7 +4,7 @@ Plack::Middleware::CSRFBlock - Block CSRF Attacks with minimal changes to your a
 
 # VERSION
 
-version 0.06
+version 0.08
 
 # SYNOPSIS
 
@@ -26,10 +26,9 @@ to your application, in most cases. Here is the strategy:
 - output filter
 
 When the application response content-type is "text/html" or
-"application/xhtml+xml", this inserts hidden input tag that contains token
-string into `form`s in the response body.  It can also adds an optional meta
-tag (by setting `add_meta` to true) with the default name "csrftoken".
-For example, the application response body is:
+"application/xhtml+xml", this inserts a hidden input tag that contains a token
+string into `form`s in the response body. For example, when the application
+response body is:
 
     <html>
       <head>
@@ -41,10 +40,10 @@ For example, the application response body is:
         </form>
     </html>
 
-this becomes:
+This becomes:
 
     <html>
-      <head><meta name="csrftoken" content="0f15ba869f1c0d77"/>
+      <head>
           <title>input form</title>
       </head>
       <body>
@@ -54,6 +53,21 @@ this becomes:
     </html>
 
 This affects `form` tags with `method="post"`, case insensitive.
+
+It is possible to add an optional meta tag by setting `meta_tag` to a defined
+value. The 'name' attribute of the HTML tag will be set to the value of
+`meta_tag`. For the previous example, when `meta_tag` is set to
+'csrf\_token', the output will be:
+
+    <html>
+      <head><meta name="csrf_token" content="0f15ba869f1c0d77"/>
+          <title>input form</title>
+      </head>
+      <body>
+        <form action="/api" method="post"><input type="hidden" name="SEC" value="0f15ba869f1c0d77" />
+          <input type="text" name="email" /><input type="submit" />
+        </form>
+    </html>
 
 - input check
 
@@ -156,7 +170,7 @@ This makes your applications more secure, but in many cases, is too strict.
 
 # COPYRIGHT AND LICENSE
 
-This software is copyright (c) 2012 by the Authors of Plack-Middleware-CSRFBlock.
+This software is copyright (c) 2013 by the Authors of Plack-Middleware-CSRFBlock.
 
 This is free software; you can redistribute it and/or modify it under
 the same terms as the Perl 5 programming language system itself.
