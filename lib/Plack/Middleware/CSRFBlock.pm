@@ -58,7 +58,7 @@ sub call {
     my $token = $session->{$self->session_key};
     if($request->method =~ m{^post$}i) {
         # Log the request with env info
-        $self->log(info => 'Got POST Request');
+        $self->log(debug => 'Got POST Request');
 
         # If we don't have a token, can't do anything
         return $self->token_not_found($env) unless $token;
@@ -68,13 +68,13 @@ sub call {
         # First, check if the header is set correctly.
         $found = ( $request->header( $self->header_name ) || '') eq $token;
 
-        $self->log(info => 'Found in Header? : ' . ($found ? 1 : 0));
+        $self->log(debug => 'Found in Header? : ' . ($found ? 1 : 0));
 
         # If the token wasn't set, let's check the params
         unless ($found) {
             my $val = $request->parameters->{ $self->parameter_name } || '';
             $found = $val eq $token;
-            $self->log(info => 'Found in parameters : ' . ($found ? 1 : 0));
+            $self->log(debug => 'Found in parameters : ' . ($found ? 1 : 0));
         }
 
         return $self->token_not_found($env) unless $found;
