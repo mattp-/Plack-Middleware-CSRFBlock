@@ -6,6 +6,7 @@ use warnings;
 # ABSTRACT: Block CSRF Attacks with minimal changes to your app
 
 use Digest::SHA1;
+use Time::HiRes qw(time);
 use HTML::Parser;
 use Plack::Request;
 use Plack::TempBuffer;
