@@ -1,4 +1,7 @@
 Revision history for Plack::Middleware::CSRFBlock
+0.9 Fri Jul 11 14:14:39 EDT 2014
+    * use Time::Hires for higher granularity timing (thanks @throughnothing)
+    * log messages to debug instead of info stream (thanks @throughnothing)
 
 0.8 Wed May 29 13:17:06 EDT 2013
     * sets repository in META.yml to differentiate from other forks (thanks @oalders)
