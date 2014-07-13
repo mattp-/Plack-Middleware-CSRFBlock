@@ -4,7 +4,7 @@ Plack::Middleware::CSRFBlock - Block CSRF Attacks with minimal changes to your a
 
 # VERSION
 
-version 0.09
+version 0.10
 
 # SYNOPSIS
 
@@ -141,7 +141,7 @@ to your application, in most cases. Here is the strategy:
 
 - session\_key (default:"csrfblock.token")
 
-    This middleware uses [Plack::Middleware::Session](https://metacpan.org/pod/Plack::Middleware::Session) for token storage. this is
+    This middleware uses [Plack::Middleware::Session](http://search.cpan.org/perldoc?Plack::Middleware::Session) for token storage. this is
     the session key for that.
 
 - blocked (default:403 response)
@@ -160,7 +160,7 @@ to your application, in most cases. Here is the strategy:
 
 # SEE ALSO
 
-[Plack::Middleware::Session](https://metacpan.org/pod/Plack::Middleware::Session)
+[Plack::Middleware::Session](http://search.cpan.org/perldoc?Plack::Middleware::Session)
 
 # AUTHORS
 

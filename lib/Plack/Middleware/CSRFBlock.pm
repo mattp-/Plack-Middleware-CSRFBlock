@@ -1,4 +1,5 @@
 package Plack::Middleware::CSRFBlock;
+
 use parent qw(Plack::Middleware);
 use strict;
 use warnings;
