@@ -6,7 +6,7 @@ use warnings;
 
 # ABSTRACT: Block CSRF Attacks with minimal changes to your app
 
-use Digest::SHA1;
+use Digest::SHA;
 use Time::HiRes qw(time);
 use HTML::Parser;
 use Plack::Request;
@@ -30,7 +30,7 @@ sub prepare_app {
     $self->header_name($header_name);
 
     $self->_token_generator(sub {
-        my $token = Digest::SHA1::sha1_hex(rand() . $$ . {} . time);
+        my $token = Digest::SHA::sha1_hex(rand() . $$ . {} . time);
         substr($token, 0 , $self->token_length);
     });
 }
