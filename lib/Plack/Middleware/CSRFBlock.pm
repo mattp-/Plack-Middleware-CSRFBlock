@@ -6,7 +6,7 @@ use warnings;
 
 # ABSTRACT: Block CSRF Attacks with minimal changes to your app
 
-use Digest::SHA1;
+use Digest::SHA;
 use Time::HiRes qw(time);
 use HTML::Parser;
 use Plack::Request;
@@ -14,7 +14,7 @@ use Plack::TempBuffer;
 use Plack::Util;
 use Plack::Util::Accessor qw(
     parameter_name header_name add_meta meta_tag token_length
-    session_key blocked onetime _token_generator logger
+    session_key blocked onetime token_generator logger
 );
 
 sub prepare_app {
@@ -29,10 +29,14 @@ sub prepare_app {
     $header_name =~ s/-/_/g;
     $self->header_name($header_name);
 
-    $self->_token_generator(sub {
-        my $token = Digest::SHA1::sha1_hex(rand() . $$ . {} . time);
-        substr($token, 0 , $self->token_length);
-    });
+    if ( ! defined($self->token_generator) ) {
+        $self->token_generator(sub {
+            my $token_length = shift @_;
+            my $token = Digest::SHA::sha1_hex(rand() . $$ . {} . time);
+            return substr($token, 0 , $token_length);
+        });
+    }
+
 }
 
 sub log {
@@ -94,7 +98,7 @@ sub call {
 
         my @out;
         my $http_host = $request->uri->host;
-        my $token = $session->{$self->session_key} ||= $self->_token_generator->();
+        my $token = $session->{$self->session_key} ||= $self->token_generator->($self->token_length);
         my $parameter_name = $self->parameter_name;
 
         my $p = HTML::Parser->new(
@@ -326,6 +330,16 @@ client sent collect token and this middleware detect that, token string is
 regenerated.
 
 This makes your applications more secure, but in many cases, is too strict.
+
+=item token_generator (default: use built-in token generator)
+
+If defined, B<token_generator> will be called to generate a new token
+instead of using the built-in token generator. Typically this would be
+used if you require a more cryptographically secure token than the built-in
+generator provides.
+
+B<token_generator> will be called with a single parameter which is the
+B<token_length> for the resulting token.
 
 =back
 
