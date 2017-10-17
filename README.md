@@ -158,6 +158,16 @@ to your application, in most cases. Here is the strategy:
 
     This makes your applications more secure, but in many cases, is too strict.
 
+- token\_generator (default: use built-in token generator)
+
+    If defined, __token_generator__ will be called to generate a new token
+    instead of using the built-in token generator. Typically this would be
+    used if you require a more cryptographically secure token than the built-in
+    generator provides.
+
+    __token_generator__ will be called with a single parameter which is the
+    __token_length__ for the resulting token.
+
 # SEE ALSO
 
 [Plack::Middleware::Session](http://search.cpan.org/perldoc?Plack::Middleware::Session)

@@ -317,4 +317,51 @@ test_psgi app => $app4, client => sub {
     is $res->code, 200, 'w/Token in Header Only';
 };
 
+# custom token generator
+my $app5 = builder {
+    enable 'Session', , state => Plack::Session::State::Cookie->new(session_key => 'sid');
+    enable 'CSRFBlock',
+        token_length => 8,
+        parameter_name => 'TKN',
+        onetime => 1,
+        blocked => sub {
+            [ 404,
+                ['Content-Type' => 'text/plain'],
+                [ 'csrf' ]
+            ]
+        },
+        token_generator => sub {
+            # for testing only - not a good example of being more secure
+            return "11111111";
+        }
+    ;
+    $mapped;
+};
+
+test_psgi app => $app5, client => sub {
+    my $cb = shift;
+
+    my $token = '11111111';
+
+    my $res = $cb->(GET "http://localhost/form/xhtml");
+    is $res->code, 200, 'w/custom generator: form';
+
+    my $h_cookie = $res->header('Set-Cookie');
+    $h_cookie =~ /sid=([^; ]+)/;
+    my $sid = $1;
+
+    ok $res->content =~ /<input type="hidden" name="TKN" value="$token" \/>/;
+    $res = $cb->(POST "http://localhost/post", [TKN => $token, name => 'Plack'], Cookie => "sid=$sid");
+    is $res->code, 200, 'w/custom generator: token use first time';
+
+    for(1..2) {
+        $res = $cb->(GET "http://localhost/form/xhtml", Cookie => "sid=$sid");
+        is $res->code, 200, 'w/custom generator form again';
+        ok $res->content =~ /<input type="hidden" name="TKN" value="$token" \/>/;
+
+        $res = $cb->(POST "http://localhost/post", [TKN => $token, name => 'Plack'], Cookie => "sid=$sid");
+        is $res->code, 200, 'w/custom generator: never changing token used';
+    }
+};
+
 done_testing;
